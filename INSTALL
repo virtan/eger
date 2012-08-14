@@ -1,0 +1,13 @@
+To build run
+./configure && make && make install
+
+For better performance results:
+./configure CXXFLAGS="-O3 -mtune=native -march=native" && make -j 4 && make -j 4 install
+
+For debug symbols:
+./configure CXXFLAGS="-O0 -g" && make -j 4 && make -j 4 install
+
+For static only:
+./configure --disable-shared && make -j 4 && make -j 4 install
+
+See README for documentation

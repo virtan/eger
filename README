@@ -1,0 +1,86 @@
+C++11 fast lightweight logger and profiler library under BSD license
+
+
+ADVANTAGES
+
+    1. Asynchronous or synchronous logging
+    2. Logging parameters are NOT calculated if current log_level is disabled
+    3. Very lightweight (disabled log_level costs as much as 0.1x rand() call)
+    4. Stream interface
+    5. Supports writing to files or stdout/stderr streams
+    6. Supports log file autorotating
+    7. Declarative context-independent profiler
+
+
+LOGGING
+
+    Simple rules to use logger:
+
+        1. Start logger thread in main()
+
+        #include <eger/logger.h>                                        // include logger header
+        <..>
+        int main() {
+            <..>
+            eger::instance eger_logger;                                 // declare instance
+            eger_logger[(size_t) eger::level_critical] = "stderr";      // specify destination for stream
+            eger_logger[(size_t) eger::level_error] = "error.log";      //     could be stdout, stderr,
+            eger_logger[(size_t) eger::level_warning] = "error.log";    //     path to file, or "" (level disabled)
+            eger_logger.start_writer();                                 // start async or sync (start_sync_writer())
+                                                                        //     logger thread
+            <..>
+        }
+
+        2. Perform writing to appropriate log level somewhere in code
+
+        #include <eger/logger.h>
+        <..>
+            log_warning("this is a warning");i                          // write string to warning level log
+            log_error("this is a error number " << 5 << '!');           //     to error level
+            log_critical("this is critical " <<  __PRETTY_FUNCTION__);  //     to critical level
+            log_debug("and this is harasho");                           //     to debug level
+        <..>
+
+
+PROFILING
+
+    Simple rules to use profiler:
+
+        1. Start logger (see LOGGING)
+
+        2. Include profiler header
+
+        #include <eger/profiler.h>
+
+        3. Use profiler_{start,stop,dump,reset} with unique symbolic profiler label
+           without any explicit declarations and in any order of appearance
+
+        int main() {
+            <..>
+            actual_work();
+            <..>
+            profiler_dump(multiplication_cumulative);       // you can use any unique symbolic
+            profiler_dump(division_cumulative);             // name for profiler label
+            <..>                                            // no declaration needed
+        }
+
+        size_t actual_work() {
+            <..>
+            for(<..>) actual_work_iteration();
+            <..>
+        }
+
+        void actual_work_iteration() {
+            <..>
+            profiler_start(multiplication_cumulative);
+            <..>
+            profiler_stop(multiplication_cumulative);
+            <..>
+            profiler_start(division_cumulative);
+            <..>
+            profiler_stop(division_cumulative);
+            <..>
+        }
+
+
+See tests/*.cc for details
