@@ -18,16 +18,20 @@ LOGGING
 
         1. Start logger thread in main()
 
-        #include <eger/logger.h>                                        // include logger header
+        #include <eger/logger.h>          // include logger header
         <..>
         int main() {
             <..>
-            eger::instance eger_logger;                                 // declare instance
-            eger_logger[(size_t) eger::level_critical] = "stderr";      // specify destination for stream
-            eger_logger[(size_t) eger::level_error] = "error.log";      //     could be stdout, stderr,
-            eger_logger[(size_t) eger::level_warning] = "error.log";    //     path to file, or "" (level disabled)
-            eger_logger.start_writer();                                 // start async or sync (start_sync_writer())
-                                                                        //     logger thread
+            eger::instance eger_logger;   // declare instance
+            eger_logger[(size_t) eger::level_critical] = "stderr";
+                                          // specify destination for stream
+            eger_logger[(size_t) eger::level_error] = "error.log";
+                                          //     could be stdout, stderr,
+            eger_logger[(size_t) eger::level_warning] = "error.log";
+                                          //     path to file, or "" (level disabled)
+            eger_logger.start_writer();
+                                          // start async or sync (start_sync_writer())
+                                          //     logger thread
             <..>
         }
 
@@ -35,10 +39,12 @@ LOGGING
 
         #include <eger/logger.h>
         <..>
-            log_warning("this is a warning");i                          // write string to warning level log
-            log_error("this is a error number " << 5 << '!');           //     to error level
-            log_critical("this is critical " <<  __PRETTY_FUNCTION__);  //     to critical level
-            log_debug("and this is harasho");                           //     to debug level
+            log_warning("this is a warning");   // write string to warning level log
+            log_error("this is a error number " << 5 << '!');
+                                                //     to error level
+            log_critical("this is critical " <<  __PRETTY_FUNCTION__);
+                                                //     to critical level
+            log_debug("and this is harasho");   //     to debug level
         <..>
 
 
@@ -59,9 +65,9 @@ PROFILING
             <..>
             actual_work();
             <..>
-            profiler_dump(multiplication_cumulative);       // you can use any unique symbolic
-            profiler_dump(division_cumulative);             // name for profiler label
-            <..>                                            // no declaration needed
+            profiler_dump(multiplication_cumulative); // you can use any unique symbolic
+            profiler_dump(division_cumulative);       // name for profiler label
+            <..>                                      // no declaration needed
         }
 
         size_t actual_work() {
