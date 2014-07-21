@@ -1,8 +1,9 @@
 #ifndef EGER_LOGGER_H
 #define EGER_LOGGER_H
 
-#include <boost/thread.hpp>
+#include <thread>
 #include <eger/types.h>
+#include <assert.h>
 
 namespace eger {
 
@@ -43,7 +44,7 @@ class instance : public log_map {
 
     static instance *eger_instance_;
     static writer *wrt;
-    static boost::thread *wrt_thread;
+    static std::thread *wrt_thread;
 };
 
 template<class lambda>

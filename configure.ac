@@ -21,7 +21,7 @@ AM_PROG_LIBTOOL
 
 # Lang for tests
 AC_LANG(C++)
-CXXFLAGS="$CXXFLAGS -std=c++0x -W -Wall -Werror -pthread"
+CXXFLAGS="$CXXFLAGS -std=c++11 -W -Wall -Werror -pthread"
 
 # Checks for programs.
 AC_PROG_CXX([g++-4.8 g++-4.7 g++-4.6 g++-4.5 g++ c++ cc cxx])
@@ -32,14 +32,10 @@ AC_PROG_LN_S
 # Options
 AC_SYS_LARGEFILE
 
-# Check for boost
-AX_BOOST_BASE([1.48],[],[Boost 1.48+ needed])
-AX_BOOST_THREAD
-
 # Checks for header files.
 AC_HEADER_STDC
-AC_CHECK_HEADERS([boost/date_time/posix_time/posix_time.hpp],[],[AC_MSG_ERROR(Header absent)])
-AC_CHECK_HEADERS([boost/thread.hpp],[],[AC_MSG_ERROR(Header absent)])
+AC_CHECK_HEADERS([chrono],[],[AC_MSG_ERROR(Header absent)])
+AC_CHECK_HEADERS([thread],[],[AC_MSG_ERROR(Header absent)])
 AC_CHECK_HEADERS([algorithm],[],[AC_MSG_ERROR(Header absent)])
 AC_CHECK_HEADERS([iterator],[],[AC_MSG_ERROR(Header absent)])
 AC_CHECK_HEADERS([sstream],[],[AC_MSG_ERROR(Header absent)])

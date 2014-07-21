@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
-#include <boost/date_time/posix_time/posix_time.hpp>
+#include <chrono>
 
 namespace eger {
 
@@ -25,11 +25,11 @@ enum log_level {
 struct log_stream : public std::ostringstream {
     log_stream(log_level _lvl) :
         lvl(_lvl),
-        moment(boost::posix_time::microsec_clock::local_time()),
+        moment(std::chrono::system_clock::now()),
         multiline(false)
     {}
     log_level lvl;
-    boost::posix_time::ptime moment;
+    std::chrono::system_clock::time_point moment;
     bool multiline;
 };
 

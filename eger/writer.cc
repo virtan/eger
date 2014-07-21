@@ -1,3 +1,7 @@
+#include <iostream>
+#include <iomanip>
+#include <ratio>
+#include <unistd.h>
 #include "writer.h"
 
 namespace eger {
@@ -37,7 +41,7 @@ void writer::push_back(log_stream *ls) {
     if(sync_mode) {
         int fd = -1;
         perform_writing(ls, fd);
-        if(fd >= 0) close(fd);
+        if(fd >= 0) ::close(fd);
         return;
     }
     size_t my_place = __sync_fetch_and_add(&accepting, 1);
@@ -59,20 +63,25 @@ void writer::stop() {
 }
 
 string writer::compose_log_string(log_stream *ls, bool ansi_colors) {
-    using namespace boost::posix_time;
+    using namespace std::chrono;
     using namespace std;
     ostringstream d;
-    struct tm now_t = to_tm(ls->moment);
+
+    time_t tt = system_clock::to_time_t(ls->moment);
+    tm local_tm;
+    ::localtime_r(&tt, &local_tm);
+    system_clock::duration tp = ls->moment.time_since_epoch();
+    milliseconds ms = duration_cast<milliseconds>(tp);
     if(ansi_colors) d << char(27) << "[38;5;238m";
     /* no date
     d << (now_t.tm_year + 1900) << '.' << setw(2) << setfill('0') << (now_t.tm_mon + 1) << '.' <<
         setw(2) << setfill('0') << now_t.tm_mday;
     d << ' ';
     */
-    d << setw(2) << setfill('0') << now_t.tm_hour << ':' <<
-        setw(2) << setfill('0') << now_t.tm_min << ':' <<
-        setw(2) << setfill('0') << now_t.tm_sec;
-    d << '.' << setw(3) << setfill('0') << (ls->moment.time_of_day().fractional_seconds() / 1000);
+    d << setw(2) << setfill('0') << local_tm.tm_hour << ':' <<
+        setw(2) << setfill('0') << local_tm.tm_min << ':' <<
+        setw(2) << setfill('0') << local_tm.tm_sec;
+    d << '.' << setw(3) << setfill('0') << (ms.count() % 1000);
     d << ' ';
     d << level_to_string(ls->lvl, ansi_colors);
     d << ' ';
@@ -178,9 +187,9 @@ void writer::rename_log(const string &from, const string &to) {
 }
 
 void writer::run() {
-    using namespace boost::posix_time;
+    using namespace std::chrono;
     while(true) {
-        ptime start_time = microsec_clock::local_time();
+        system_clock::time_point start_time = system_clock::now();
         __sync_synchronize();
         if(writing < accepting) write_logs();
         __sync_synchronize();
@@ -188,11 +197,12 @@ void writer::run() {
             finished = true;
             break;
         }
-        ptime next_cycle_time = start_time + seconds(1);
-        ptime now = microsec_clock::local_time();
+        system_clock::time_point next_cycle_time = start_time + seconds(1);
+        system_clock::time_point now = system_clock::now();
         if(next_cycle_time > now) {
-            if(wait_for_finish) usleep((next_cycle_time - now).total_microseconds() / 10);
-            else usleep((next_cycle_time - now).total_microseconds());
+            auto drt(next_cycle_time - now);
+            if(wait_for_finish) usleep(duration_cast<microseconds>(drt).count() / 10);
+            else usleep(duration_cast<microseconds>(drt).count());
         }
     }
 }

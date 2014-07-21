@@ -1,3 +1,4 @@
+#include <iostream>
 #include "logger.h"
 #include "writer.h"
 
@@ -5,7 +6,7 @@ namespace eger {
 
 instance *instance::eger_instance_ = 0;
 writer *instance::wrt = 0;
-boost::thread *instance::wrt_thread = 0;
+std::thread *instance::wrt_thread = 0;
 
 instance::instance() :
     maximum_log_size(20*1024*1024),
@@ -29,7 +30,7 @@ void instance::start_writer() {
     // born thread with instance of writer
     assert(!wrt && !wrt_thread);
     wrt = new writer(this, 64*1024);
-    wrt_thread = new boost::thread(writer::static_run, wrt);
+    wrt_thread = new std::thread(writer::static_run, wrt);
 }
 
 void instance::start_sync_writer() {

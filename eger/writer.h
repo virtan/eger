@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <algorithm>
 #include <iterator>
-#include <boost/date_time/posix_time/posix_time.hpp>
+#include <chrono>
 #include <eger/types.h>
 #include <eger/logger.h>
 
