@@ -19191,6 +19191,8 @@ _ACEOF
 
 
 # Pkgconfig
+ln -s eger src
+#export PKGCONFIG_src_libdir=`pwd`/$objdir
 
 # we need the expanded forms...
 test "x$prefix" = xNONE && prefix=$ac_default_prefix
@@ -19375,6 +19377,7 @@ fi
 
 ac_config_commands="$ac_config_commands $ax_create_pkgconfig_generate"
 
+rm -rf eger/eger
 
 touch eger/logger.h ;
 

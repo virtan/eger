@@ -56,7 +56,10 @@ AC_HEADER_TIME
 AC_TYPE_UINT32_T
 
 # Pkgconfig
+ln -s eger src
+#export PKGCONFIG_src_libdir=`pwd`/$objdir
 AX_CREATE_PKGCONFIG_INFO
+rm -rf eger/eger
 
 touch eger/logger.h ;
 

@@ -2,7 +2,7 @@
 prefix="/usr/local"
 exec_prefix="${prefix}"
 bindir="${exec_prefix}/bin"
-libdir="/home/imilyakov/service-proxy/eger/.libs"
+libdir="/home/imilyakov/service-proxy/eger/src/.libs"
 datarootdir="${prefix}/share"
 datadir="${datarootdir}"
 sysconfdir="${prefix}/etc"
@@ -14,9 +14,9 @@ for option; do case "$option" in --list-all|--name) echo  "eger"
 ;; --help) pkg-config --help ; echo Buildscript Of "eger Library"
 ;; --modversion|--version) echo "0.1"
 ;; --requires) echo : ""
-;; --libs) echo -L${libdir} "" "-leger"
+;; --libs) echo -L${libdir} "" "-L/home/imilyakov/service-proxy/eger/src/.libs -leger"
        :
-;; --cflags) echo -I${includedir} ""
+;; --cflags) echo -I${includedir} "-I/home/imilyakov/service-proxy/eger/."
        :
 ;; --variable=*) eval echo '$'`echo $option | sed -e 's/.*=//'`
 ;; --uninstalled) exit 0 
