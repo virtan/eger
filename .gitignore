@@ -17,3 +17,7 @@ tests/*
 !tests/*.in
 !tests/*.h
 !tests/*.cc
+eger-uninstalled.pc
+eger-uninstalled.sh
+eger.pc
+src
