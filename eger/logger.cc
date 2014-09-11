@@ -23,6 +23,8 @@ instance::~instance() {
     if(wrt_thread) wrt_thread->join();
     delete wrt_thread;
     delete wrt;
+    wrt_thread = 0;
+    wrt = 0;
     eger_instance_ = 0;
 }
 
