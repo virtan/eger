@@ -57,32 +57,32 @@ namespace eger {
             }
 
             // if in capacity — stores ptr and takes ownership, returns true
-            // if out of capacity — deletes ptr, deletes prev element (to signal overflow), returns false
+            // if out of capacity — deletes prev element (to signal overflow), returns false
             bool push(Value *ptr) {
                 Value *prev = 0;
                 for(;;) {
                     std::lock_guard<std::mutex> lock(exclusive_access);
-                    size_t circular_offset = get_circular_offset(writer_position - 1);
                     if(unlikely(requested_size != circular_buffer.size())) {
                         requested_size = nearest_power_of_two(requested_size);
                         if(writer_position - reader_position <= requested_size) {
                             // can change the size
                             change_size();
-                            circular_offset = get_circular_offset(writer_position - 1);
                         } else {
+                            size_t circular_offset = get_circular_offset(writer_position - 1);
                             std::swap(prev, circular_buffer[circular_offset]);
                             break;
                         }
                     }
                     if(unlikely(writer_position - reader_position == circular_buffer.size())) { // out of capacity
+                        size_t circular_offset = get_circular_offset(writer_position - 1);
                         std::swap(prev, circular_buffer[circular_offset]);
                         break;
                     }
+                    size_t circular_offset = get_circular_offset(writer_position);
                     circular_buffer[circular_offset] = ptr;
                     if(reader_position == writer_position++) cv.notify_one();
                     return true;
                 }
-                delete ptr;
                 delete prev;
                 return false;
             }
@@ -116,6 +116,29 @@ namespace eger {
                 size_t circular_offset = get_circular_offset(reader_position++);
                 std::swap(ret.second, circular_buffer[circular_offset]);
                 return ret;
+            }
+
+            // gets everything from buffer
+            // blocks if empty
+            void pop_all(std::vector<Value*> &dest) {
+                std::unique_lock<std::mutex> lock(exclusive_access);
+                while(unlikely(dest.size() != circular_buffer.size())) {
+                    size_t circular_buffer_size = circular_buffer.size();
+                    lock.unlock();
+                    dest.resize(circular_buffer_size);
+                    lock.lock();
+                }
+                dest.swap(circular_buffer);
+                size_t local_reader_position = reader_position;
+                size_t local_writer_position = writer_position;
+                reader_position = writer_position;
+                lock.unlock();
+                // linearize
+            }
+
+            // gets everything from buffer
+            // doesn't block, returns false if empty
+            bool pop_all_nb(std::vector<Value*> &dest) {
             }
 
         private:
@@ -154,21 +177,29 @@ namespace eger {
                 many_to_many_circular_queue<int> target;
                 target.init(2);
 
+                assert(target.reader_position == 0);
+                assert(target.writer_position == 0);
                 bool rc = target.empty();
                 assert(rc == true);
                 rc = target.push(values[0]);
                 assert(rc == true);
                 rc = target.empty();
                 assert(rc == false);
+                assert(target.reader_position == 0);
+                assert(target.writer_position == 1);
                 int *rv = target.pop();
                 assert(rv && *rv == 1);
                 rc = target.empty();
                 assert(rc == true);
+                assert(target.reader_position == 1);
+                assert(target.writer_position == 1);
 
                 rc = target.push(values[0]);
                 assert(rc == true);
                 rc = target.push(values[1]);
                 assert(rc == true);
+                assert(target.reader_position == 1);
+                assert(target.writer_position == 3);
                 rc = target.empty();
                 assert(rc == false);
                 rv = target.pop();
@@ -177,6 +208,8 @@ namespace eger {
                 assert(rv && *rv == 2);
                 rc = target.empty();
                 assert(rc == true);
+                assert(target.reader_position == 3);
+                assert(target.writer_position == 3);
 
                 delete values[0];
                 delete values[1];
@@ -192,7 +225,7 @@ namespace eger {
                 rc = target.push(values[1]);
                 assert(rc == true);
                 rc = target.push(values[2]);
-                assert(rc == false); // no space, 1 is deleted too
+                assert(rc == false); // no space, 1 is deleted
                 rc = target.empty();
                 assert(rc == false); // still have a value
                 int* rv = target.pop();
@@ -210,6 +243,7 @@ namespace eger {
                 assert(rv && *rv == 1);
 
                 delete values[0];
+                delete values[2];
             }
 
             static bool test_resize_up() {
@@ -249,6 +283,50 @@ namespace eger {
                 assert(rc == true);
                 assert(target.reader_position == 8);
                 assert(target.writer_position == 8);
+
+                delete values[0];
+                delete values[1];
+                delete values[2];
+                delete values[3];
+            }
+
+            static bool test_resize_down() {
+                std::vector<int*> values{new int(1), new int(2), new int(3), new int(4)};
+                many_to_many_circular_queue<int> target;
+                target.init(4);
+
+                target.push(values[0]);
+                target.push(values[1]);
+                target.push(values[2]);
+                target.size() = 2; // cannot shrink immediately
+                bool rc = target.push(values[3]);
+                assert(rc == false);
+                int *rv = target.pop();
+                assert(rv && *rv == 1);
+                rc = target.push(values[3]);
+                assert(rc == false); // still have no space
+                rv = target.pop();
+                assert(rv && *rv == 2);
+                rc = target.push(values[3]);
+                assert(rc == true); // still have no space
+                rv = target.pop();
+                assert(rv == 0); // sign of overfill
+                rv = target.pop();
+                assert(rv && *rv == 4);
+                assert(target.reader_position == 5);
+                assert(target.writer_position == 5);
+
+                delete values[0];
+                delete values[1];
+                delete values[3];
+            }
+
+            static bool test_destructor() {
+                std::vector<int*> values{new int(1), new int(2)};
+                many_to_many_circular_queue<int> target;
+                target.init(2);
+                target.push(values[0]);
+                target.push(values[1]);
             }
 #endif
     };
