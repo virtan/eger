@@ -8,10 +8,98 @@
 #include <utility>
 #include <math.h>
 #include <assert.h>
+#include <thread>
 
-#include <eger_useful.h>
+#include <eger/eger_useful.h>
 
 namespace eger {
+
+    template<class Value>
+    class many_to_many_circular_queue;
+
+    // the same as vector<Value> but lets access all elements in the circular_buffer
+    // used by many_to_many_circular_queue in a typical c++11 for loop:
+    // for(auto &v : many_to_many_circular_queue::pop_all(circular_vector)) {...}
+    template<class Value>
+    class circular_vector {
+        private:
+            std::vector<Value> v;
+            size_t reader_position;
+            size_t writer_position;
+
+        public:
+            class iterator {
+                private:
+                    circular_vector &v;
+                    size_t position;
+
+                public:
+                    iterator(circular_vector &_v, size_t _position) :
+                        v(_v),
+                        position(_position)
+                    {}
+
+                    iterator(const iterator &other) :
+                        v(other.v),
+                        position(other.position)
+                    {}
+
+                    Value &operator*() {
+                        return v[position];
+                    }
+
+                    Value &operator->() {
+                        return v[position];
+                    }
+
+                    bool operator==(const iterator &other) const {
+                        return &v == &other.v && position == other.position;
+                    }
+
+                    bool operator!=(const iterator &other) const {
+                        return !operator==(other);
+                    }
+
+                    // prefix
+                    iterator &operator++() {
+                        ++position;
+                        return *this;
+                    }
+
+                    // postfix
+                    iterator operator++(int) {
+                        iterator rv(*this);
+                        ++position;
+                        return rv;
+                    }
+            };
+
+        public:
+            circular_vector() :
+                reader_position(0),
+                writer_position(0)
+            {}
+
+            size_t size() const {
+                return writer_position - reader_position;
+            }
+
+            bool empty() const {
+                return writer_position == reader_position;
+            }
+
+            iterator begin() {
+                return iterator(v, reader_position);
+            }
+
+            iterator end() {
+                return iterator(v, writer_position);
+            }
+
+        template<class Value2>
+        friend class many_to_many_circular_queue;
+    };
+
     template<class Value>
     class many_to_many_circular_queue {
         private:
@@ -56,8 +144,8 @@ namespace eger {
                 return requested_size;
             }
 
-            // if in capacity — stores ptr and takes ownership, returns true
-            // if out of capacity — deletes prev element (to signal overflow), returns false
+            // if in capacity - stores ptr and takes ownership, returns true
+            // if out of capacity - deletes prev element (to signal overflow), returns false
             bool push(Value *ptr) {
                 Value *prev = 0;
                 for(;;) {
@@ -92,7 +180,7 @@ namespace eger {
                 Value *ptr = 0;
                 std::unique_lock<std::mutex> lock(exclusive_access);
                 if(unlikely(reader_position == writer_position)) // no data, need to wait
-                    cv.wait(lock, [this] { return reader_position < writer_position; });
+                    cv.wait(lock, [this] () { return reader_position < writer_position; });
                 size_t circular_offset = get_circular_offset(reader_position++);
                 std::swap(ptr, circular_buffer[circular_offset]);
                 lock.unlock();
@@ -120,25 +208,41 @@ namespace eger {
 
             // gets everything from buffer
             // blocks if empty
-            void pop_all(std::vector<Value*> &dest) {
+            circular_vector<Value*> &pop_all(circular_vector<Value*> &dest) {
                 std::unique_lock<std::mutex> lock(exclusive_access);
-                while(unlikely(dest.size() != circular_buffer.size())) {
+                if(unlikely(reader_position == writer_position)) // no data, need to wait
+                    cv.wait(lock, [this] () { return reader_position < writer_position; });
+                while(unlikely(dest.v.size() != circular_buffer.size())) {
                     size_t circular_buffer_size = circular_buffer.size();
                     lock.unlock();
-                    dest.resize(circular_buffer_size);
+                    dest.v.resize(circular_buffer_size);
                     lock.lock();
                 }
-                dest.swap(circular_buffer);
-                size_t local_reader_position = reader_position;
-                size_t local_writer_position = writer_position;
+                dest.v.swap(circular_buffer);
+                dest.reader_position = reader_position;
+                dest.writer_position = writer_position;
                 reader_position = writer_position;
                 lock.unlock();
-                // linearize
+                return dest;
             }
 
             // gets everything from buffer
             // doesn't block, returns false if empty
-            bool pop_all_nb(std::vector<Value*> &dest) {
+            bool pop_all_nb(circular_vector<Value*> &dest) {
+                std::unique_lock<std::mutex> lock(exclusive_access);
+                if(likely(reader_position == writer_position)) return false;
+                while(unlikely(dest.v.size() != circular_buffer.size())) {
+                    size_t circular_buffer_size = circular_buffer.size();
+                    lock.unlock();
+                    dest.v.resize(circular_buffer_size);
+                    lock.lock();
+                }
+                dest.v.swap(circular_buffer);
+                dest.reader_position = reader_position;
+                dest.writer_position = writer_position;
+                reader_position = writer_position;
+                lock.unlock();
+                return true;
             }
 
         private:
@@ -213,6 +317,8 @@ namespace eger {
 
                 delete values[0];
                 delete values[1];
+
+                return true;
             }
 
             static bool test_overfill() {
@@ -244,6 +350,8 @@ namespace eger {
 
                 delete values[0];
                 delete values[2];
+
+                return true;
             }
 
             static bool test_resize_up() {
@@ -288,6 +396,8 @@ namespace eger {
                 delete values[1];
                 delete values[2];
                 delete values[3];
+
+                return true;
             }
 
             static bool test_resize_down() {
@@ -319,6 +429,8 @@ namespace eger {
                 delete values[0];
                 delete values[1];
                 delete values[3];
+
+                return true;
             }
 
             static bool test_destructor() {
@@ -327,6 +439,30 @@ namespace eger {
                 target.init(2);
                 target.push(values[0]);
                 target.push(values[1]);
+
+                return true;
+            }
+
+            static bool test_blocking_pop() {
+                many_to_many_circular_queue<int> target;
+                target.init(2);
+                size_t step = 0;
+                std::thread t1([&step, &target] {
+                            while(step != 1) std::this_thread::yield();
+                            ++step;
+                            int *rv = target.pop();
+                            assert(rv && *rv == 1);
+                            delete rv;
+                            ++step;
+                        });
+                ++step;
+                while(step != 2) std::this_thread::yield();
+                std::this_thread::sleep_for(std::chrono::milliseconds(10)); // make sure we started waiting in pop
+                target.push(new int(1));
+                while(step != 3) std::this_thread::yield();
+                t1.join();
+
+                return true;
             }
 #endif
     };

@@ -1,0 +1,10 @@
+*.swp
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+
+eger/unit_tests_body.agcc
+eger/unit_tests_headers.agcc
+
+unit_tests
