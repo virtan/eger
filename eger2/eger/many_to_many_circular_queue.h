@@ -464,6 +464,52 @@ namespace eger {
 
                 return true;
             }
+
+            static bool test_pop_all_nb() {
+                many_to_many_circular_queue<int> target;
+                target.init(4);
+                
+                // shift from the beginning
+                target.push(0);
+                target.push(0);
+                target.pop();
+                target.pop();
+
+                target.push(new int(1));
+                target.push(new int(2));
+                target.push(new int(3));
+                bool rc = target.empty();
+                assert(rc == false);
+
+                circular_vector<int*> cv;
+                rc = target.pop_all_nb(cv);
+                assert(rc == true);
+                rc = target.empty();
+                assert(rc == true);
+                assert(target.reader_position == target.writer_position);
+                assert(target.reader_position == 5);
+                assert(cv.reader_position == 2);
+                assert(cv.writer_position == 5);
+                assert(cv.v.size() == 4);
+                assert(cv.size() == 3);
+                assert(!cv.empty());
+
+                int ind = 1;
+                for(int *i : cv) {
+                    assert(i);
+                    assert(*i == ind++);
+                    delete i;
+                }
+                assert(ind == 4);
+                assert(cv.reader_position == cv.writer_position);
+                assert(cv.writer_position == 5);
+                assert(cv.v.size() == 4);
+                assert(cv.size() == 0);
+                assert(cv.empty());
+                assert(target.circular_buffer.size() == 4);
+                
+                return true;
+            }
 #endif
     };
 }
