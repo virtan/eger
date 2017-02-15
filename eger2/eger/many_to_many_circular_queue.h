@@ -108,7 +108,10 @@ namespace eger {
             size_t writer_position;
             size_t requested_size;
             std::mutex exclusive_access;
-            std::condition_variable cv;
+            std::condition_variable non_empty_cv;
+            std::condition_variable empty_cv;
+            bool empty_;
+            bool owner;
 
         public:
 
@@ -116,7 +119,9 @@ namespace eger {
             many_to_many_circular_queue() :
                 reader_position(0),
                 writer_position(0),
-                requested_size(0)
+                requested_size(0),
+                empty_(true),
+                owner(true)
             {}
 
             // deletes all objects owned
@@ -125,23 +130,41 @@ namespace eger {
             }
 
             // sets size and resets both positions
-            void init(size_t size = 4096) {
+            void init(size_t _size = 4096, bool _owner = true) {
+                std::lock_guard<std::mutex> lock(exclusive_access);
                 reader_position = 0;
                 writer_position = 0;
-                requested_size = nearest_power_of_two(size);
+                size(_size);
+                empty_ = true;
+                owner = _owner;
+                empty_cv.notify_one();
             }
 
             // deletes all objects owned
             void deinit() {
                 std::lock_guard<std::mutex> lock(exclusive_access);
-                size_t mask = circular_buffer.size() - 1;
-                while(likely(reader_position < writer_position))
-                    delete circular_buffer[reader_position++ & mask];
+                if(owner) {
+                    size_t mask = circular_buffer.size() - 1;
+                    while(likely(reader_position < writer_position))
+                        delete circular_buffer[reader_position++ & mask];
+                }
+                reader_position = 0;
+                writer_position = 0;
+                empty_ = true;
             }
 
-            // can return, be set and referenced
-            size_t &size() {
+            size_t size() const {
                 return requested_size;
+            }
+
+            size_t size(size_t new_size) {
+                requested_size = nearest_power_of_two(new_size);
+                return requested_size;
+            }
+
+            // converts to unsigned uint64_t and calls size(size_t)
+            size_t size(const std::string &new_size) {
+                return size(std::stoull(new_size));
             }
 
             // if in capacity - stores ptr and takes ownership, returns true
@@ -151,7 +174,6 @@ namespace eger {
                 for(;;) {
                     std::lock_guard<std::mutex> lock(exclusive_access);
                     if(unlikely(requested_size != circular_buffer.size())) {
-                        requested_size = nearest_power_of_two(requested_size);
                         if(writer_position - reader_position <= requested_size) {
                             // can change the size
                             change_size();
@@ -168,10 +190,13 @@ namespace eger {
                     }
                     size_t circular_offset = get_circular_offset(writer_position);
                     circular_buffer[circular_offset] = ptr;
-                    if(reader_position == writer_position++) cv.notify_one();
+                    if(reader_position == writer_position++) {
+                        empty_ = false;
+                        non_empty_cv.notify_one();
+                    }
                     return true;
                 }
-                delete prev;
+                if(owner) delete prev;
                 return false;
             }
 
@@ -180,29 +205,38 @@ namespace eger {
                 Value *ptr = 0;
                 std::unique_lock<std::mutex> lock(exclusive_access);
                 if(unlikely(reader_position == writer_position)) // no data, need to wait
-                    cv.wait(lock, [this] () { return reader_position < writer_position; });
+                    non_empty_cv.wait(lock,
+                            [this] () { return reader_position < writer_position; });
                 size_t circular_offset = get_circular_offset(reader_position++);
                 std::swap(ptr, circular_buffer[circular_offset]);
+                if(reader_position == writer_position) {
+                    empty_ = true;
+                    empty_cv.notify_one();
+                }
                 lock.unlock();
                 return ptr;
             }
 
             // non-blocking check
-            bool empty() {
-                std::lock_guard<std::mutex> lock(exclusive_access);
-                return reader_position == writer_position;
+            bool empty() const {
+                return empty_;
             }
 
             // atomically checks for emptyness and returns true if empty
             // or returns false and popped value, non-blocking
             std::pair<bool, Value*> empty_or_pop() {
                 std::pair<bool, Value*> ret{true, 0};
+                if(empty_) return ret;
                 std::lock_guard<std::mutex> lock(exclusive_access);
                 if(reader_position == writer_position) // no data, don't need to wait
                     return ret;
                 ret.first = false;
                 size_t circular_offset = get_circular_offset(reader_position++);
                 std::swap(ret.second, circular_buffer[circular_offset]);
+                if(reader_position == writer_position) {
+                    empty_ = true;
+                    empty_cv.notify_one();
+                }
                 return ret;
             }
 
@@ -211,7 +245,8 @@ namespace eger {
             circular_vector<Value*> &pop_all(circular_vector<Value*> &dest) {
                 std::unique_lock<std::mutex> lock(exclusive_access);
                 if(unlikely(reader_position == writer_position)) // no data, need to wait
-                    cv.wait(lock, [this] () { return reader_position < writer_position; });
+                    non_empty_cv.wait(lock,
+                            [this] () { return reader_position < writer_position; });
                 while(unlikely(dest.v.size() != circular_buffer.size())) {
                     size_t circular_buffer_size = circular_buffer.size();
                     lock.unlock();
@@ -222,6 +257,8 @@ namespace eger {
                 dest.reader_position = reader_position;
                 dest.writer_position = writer_position;
                 reader_position = writer_position;
+                empty_ = true;
+                empty_cv.notify_one();
                 lock.unlock();
                 return dest;
             }
@@ -229,6 +266,7 @@ namespace eger {
             // gets everything from buffer
             // doesn't block, returns false if empty
             bool pop_all_nb(circular_vector<Value*> &dest) {
+                if(empty_) return false;
                 std::unique_lock<std::mutex> lock(exclusive_access);
                 if(likely(reader_position == writer_position)) return false;
                 while(unlikely(dest.v.size() != circular_buffer.size())) {
@@ -241,6 +279,8 @@ namespace eger {
                 dest.reader_position = reader_position;
                 dest.writer_position = writer_position;
                 reader_position = writer_position;
+                empty_ = true;
+                empty_cv.notify_one();
                 lock.unlock();
                 return true;
             }
@@ -369,8 +409,8 @@ namespace eger {
                 bool rc = target.empty();
                 assert(rc == false);
 
-                target.size() = 3; // should be rounded to 4
-                assert(target.requested_size == 3);
+                target.size(3); // should be rounded to 4
+                assert(target.requested_size == 4);
                 rc = target.empty();
                 assert(rc == false);
                 target.push(values[2]);
@@ -408,7 +448,7 @@ namespace eger {
                 target.push(values[0]);
                 target.push(values[1]);
                 target.push(values[2]);
-                target.size() = 2; // cannot shrink immediately
+                target.size("2"); // cannot shrink immediately
                 bool rc = target.push(values[3]);
                 assert(rc == false);
                 int *rv = target.pop();
