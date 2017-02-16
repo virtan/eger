@@ -100,6 +100,7 @@ namespace eger {
             //     logger.level_warning = disabled
             //     logger.level_error = enabled, with_ansi_colors, file "/tmp/log"
             //     logger.level_critical = enabled, no_ansi_colors, stderr
+            //     logger.level_info = "/some/file"
             void set(level l, const std::string &settings) {
                 static std::regex re("(\"[^\"]*\")|enabled|disabled|"
                         "with_ansi_colors|no_ansi_colors|stderr|stdout|devnull|file");
@@ -113,15 +114,16 @@ namespace eger {
                     auto &rer = it->str();
                     if(rer == "enabled") enabled = true;
                     else if(rer == "disabled") enabled = false;
-                    else if(rer == "with_ansi_colors") ansi_colors = true;
-                    else if(rer == "no_ansi_colors") ansi_colors = false;
-                    else if(rer == "stderr") dest = stderr;
-                    else if(rer == "stdout") dest = stdout;
-                    else if(rer == "devnull") dest = devnull;
-                    else if(rer == "file") dest = file;
+                    else if(rer == "with_ansi_colors") { ansi_colors = true; enabled = true; }
+                    else if(rer == "no_ansi_colors") { ansi_colors = false; enabled = true; }
+                    else if(rer == "stderr") { dest = stderr; enabled = true; }
+                    else if(rer == "stdout") { dest = stdout; enabled = true; }
+                    else if(rer == "devnull") { dest = devnull; enabled = true; }
+                    else if(rer == "file") { dest = file; enabled = true; }
                     else if(rer[0] == '"') {
                         dest = file;
                         path.assign(rer, 1, rer.size() - 2);
+                        enabled = true;
                     }
                 }
                 if(dest == file && path.empty()) dest = devnull;
