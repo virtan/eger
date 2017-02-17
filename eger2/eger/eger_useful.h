@@ -9,4 +9,7 @@ enum a_switch : bool {
     enabled = true
 };
 
+bool autodetect_ansi();
+std::ostringstream &current_time_to_stream(std::ostringstream &out);
+
 #endif
