@@ -18,4 +18,6 @@ bool writev_all(int fd, const struct iovec *iov, int iovcnt);
 // returns current time in microseconds
 size_t now_us();
 
+void lower_this_thread_priority();
+
 #endif

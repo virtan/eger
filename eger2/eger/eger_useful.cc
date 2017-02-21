@@ -27,3 +27,7 @@ size_t now_us() {
     return (size_t) tv.tv_sec * 1000000 + (size_t) tv.tv_usec;
 #endif
 }
+
+void lower_this_thread_priority() {
+    // TODO
+}

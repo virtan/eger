@@ -1,3 +1,16 @@
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/uio.h>
+#include <array>
+#include <vector>
+#include <thread>
+#include <regex>
+#include <sstream>
+
+#include <eger/eger_useful.h>
+#include <eger/many_to_many_circular_queue.h>
 
 // Typical logger call:
 // log_warning("a warning number " << 5)
@@ -57,7 +70,7 @@ namespace eger {
                 size_t number_of_writes_since_last_reopen;
                 size_t last_reopen;
                 bool error_reported;
-                std::vector<iovec> scheduled_for_writing;
+                std::vector<struct iovec> scheduled_for_writing;
             };
 
             mode_t log_file_mask = S_IWGRP | S_IWOTH;
@@ -70,13 +83,13 @@ namespace eger {
 
         private:
             std::array<level_data, logger_levels> levels;
-            bool autodetected_ansi_colors;
+            static bool autodetected_ansi_colors;
 
         public:
 
             // by default we're printing critical, error and warning only
             // we print them to stderr, ansi colors are enabled
-            logger_level() : autodetected_ansi_colors(autodetect_ansi()) {
+            logger_level() {
                 for(level i : {logger_level_critical, logger_level_error, logger_level_warning}) {
                     auto &ld = levels[i];
                     ld.enabled = true;
@@ -105,7 +118,7 @@ namespace eger {
                     ld.dest = devnull;
                     if(ld.dest == file) {
                         ld.path[0] = 0;
-                        path.copy(ld.path[1], std::min(path.size() - 2, sizeof(ld.path - 2)), 1);
+                        path.copy(&ld.path[1], std::min(path.size() - 2, sizeof(ld.path) - 2), 1);
                         ld.path[sizeof(ld.path) - 1] = 0;
                         ld.path[0] = path[0];
                     }
@@ -131,10 +144,10 @@ namespace eger {
                 bool location = false;
                 destination dest = stderr;
                 std::string path;
-                sregex_token_iterator it(settings.begin(), settings.end(), re);
-                sregex_token_iterator reg_end;
+                std::sregex_token_iterator it(settings.begin(), settings.end(), re);
+                std::sregex_token_iterator reg_end;
                 for(; it != reg_end; ++it) {
-                    auto &rer = it->str();
+                    const auto &rer = it->str();
                     if(rer == "enabled") enabled = true;
                     else if(rer == "disabled") enabled = false;
                     else if(rer == "with_ansi_colors") { ansi_colors = true; enabled = true; }
@@ -172,7 +185,7 @@ namespace eger {
                         }
                     } else {
                         if(unlikely(needs_reopen(ld))) {
-                            if(dest == file) close(ld.fd);
+                            if(ld.dest == file) close(ld.fd);
                             ld.fd = -1;
                         }
                         if(unlikely(ld.fd == -1)) {
@@ -185,11 +198,11 @@ namespace eger {
                                             log_file_mask);
                                     if(unlikely(ld.fd == -1)) {
                                         if(unlikely(!ld.error_reported)) {
-                                            log_error("cannot open/create log file \""
-                                                    << ld.path << '"');
+                                            std::cerr << "cannot open/create log file \""
+                                                    << ld.path << '"' << std::endl;
                                             ld.error_reported = true;
                                         }
-                                        scheduled_for_writing.clear();
+                                        ld.scheduled_for_writing.clear();
                                         continue;
                                     } else {
                                         ld.number_of_writes_since_last_reopen = 0;
@@ -203,16 +216,17 @@ namespace eger {
                         // writev on files will not be partial
                         int rc;
                         do {
-                            rc = writev(ld.fd, scheduled_for_writing.data(),
-                                    scheduled_for_writing.size());
+                            rc = writev(ld.fd, ld.scheduled_for_writing.data(),
+                                    ld.scheduled_for_writing.size());
                         } while(unlikely(rc == -1 && errno == EINTR));
                         if(unlikely(rc == -1 && !ld.error_reported && ld.dest == file)) {
-                            log_error("cannot write to log file \"" << ld.path << '"');
+                            std::cerr << "cannot write to log file \""
+                                << ld.path << '"' << std::endl;
                             ld.error_reported = true;
                         }
                         ++ld.number_of_writes_since_last_reopen;
                     }
-                    scheduled_for_writing.clear();
+                    ld.scheduled_for_writing.clear();
                 }
             }
 
@@ -222,9 +236,24 @@ namespace eger {
                     max_number_of_writes_since_last_reopen ||
                     now > ld.last_reopen + max_open_time_us;
             }
+
+            static std::string to_short_string(level l) {
+                switch(l) {
+                    case logger_level_critical: return "CRIT";
+                    case logger_level_error: return "ERRR";
+                    case logger_level_warning: return "WARN";
+                    case logger_level_info: return "INFO";
+                    case logger_level_profile: return "PROF";
+                    case logger_level_debug: return "DEBG";
+                    case logger_level_debug_hard: return "DBHR";
+                    case logger_level_debug_mare: return "DBMR";
+                    default: return "UNKN";
+                }
+            }
     };
 
     extern logger_level the_logger_level;
+
 
     class logger {
         private:
@@ -262,7 +291,7 @@ namespace eger {
                     const char *file, const char *line) {
                 size_t ansi_size = 0;
                 out << level;
-                level_data ld = the_logger_level.level_details(level);
+                logger_level::level_data ld = the_logger_level.level_details(level);
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, date_color);
                 current_time_to_stream(out);
                 out << ' ';
@@ -272,14 +301,14 @@ namespace eger {
                     out << ' ';
                 }
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, level_color, level);
-                out << ' ' << the_logger_level.to_string(level) << ' ';
+                out << ' ' << the_logger_level.to_short_string(level) << ' ';
                 return out.str().size() - ansi_size - 1;
             }
 
             void align_multiline_log_item(std::ostringstream &out, size_t prefix_size) {
                 if(out.str().empty() || !prefix_size) return; // no needs to edit
                 std::deque<size_t> newlines;
-                std::string &original = out.str();
+                const std::string &original = out.str();
                 size_t pos = 0;
                 while((pos = original.find('\n', pos)) != std::string::npos)
                     newlines.push_back(pos);
@@ -291,7 +320,7 @@ namespace eger {
                 do {
                     size_t to_copy = (newlines.empty() ? original.size() : newlines.front() + 1)
                         - pos;
-                    original.copy(edited.data() + dest_pos, to_copy, pos);
+                    original.copy(const_cast<char*>(edited.data()) + dest_pos, to_copy, pos);
                     pos += to_copy;
                     dest_pos += to_copy;
                     dest_pos += prefix_size;
@@ -301,7 +330,7 @@ namespace eger {
             }
 
             void print_log_suffix(std::ostringstream &out, logger_level::level level) {
-                level_data ld = the_logger_level.level_details(level);
+                logger_level::level_data ld = the_logger_level.level_details(level);
                 if(unlikely(ld.ansi_colors)) ansi(out, neutral_color);
             }
 
@@ -338,12 +367,12 @@ namespace eger {
                             keep_running = false;
                             delete pout;
                         } else {
-                            std::string &report = pout->str();
+                            const std::string &report = pout->str();
                             if(unlikely(report.empty())) abort();
                             logger_level::level lvl = (logger_level::level) report[0];
                             logger_level::level_data &ld = the_logger_level.level_details(lvl);
                             ld.scheduled_for_writing.emplace_back(
-                                    {report.data() + 1, report.size() - 1});
+                                    iovec{const_cast<char*>(report.data()) + 1, report.size() - 1});
                             delayed_garbage_collect.push_back(pout);
                         }
                     }
@@ -356,26 +385,34 @@ namespace eger {
             size_t ansi(std::ostringstream &out, ansi_color type,
                     logger_level::level lvl = logger_level::logger_level_critical) {
                 switch(type) {
-                    case date_color: out << "\033[38;5;" << date_color << 'm'; return 11;
+                    case date_color: out << "\033[38;5;" << (uint16_t) date_color << 'm'; return 11;
                     case neutral_color: out << "\033[m"; return 3;
                     case level_color:
                         switch(lvl) {
                             case logger_level::logger_level_critical:
-                                out << "\033[38;5;" << critical_level_color << 'm'; return 11;
+                                out << "\033[38;5;" << (uint16_t) critical_level_color << 'm';
+                                return 11;
                             case logger_level::logger_level_error:
-                                out << "\033[38;5;" << error_level_color << 'm'; return 11;
+                                out << "\033[38;5;" << (uint16_t) error_level_color << 'm';
+                                return 11;
                             case logger_level::logger_level_warning:
-                                out << "\033[38;5;" << warning_level_color << 'm'; return 11;
+                                out << "\033[38;5;" << (uint16_t) warning_level_color << 'm';
+                                return 11;
                             case logger_level::logger_level_info:
-                                out << "\033[38;5;" << info_level_color << 'm'; return 11;
+                                out << "\033[38;5;" << (uint16_t) info_level_color << 'm';
+                                return 11;
                             case logger_level::logger_level_profile:
-                                out << "\033[38;5;" << profile_level_color << 'm'; return 11;
+                                out << "\033[38;5;" << (uint16_t) profile_level_color << 'm';
+                                return 11;
                             case logger_level::logger_level_debug:
-                                out << "\033[38;5;" << debug_level_color << 'm'; return 11;
+                                out << "\033[38;5;" << (uint16_t) debug_level_color << 'm';
+                                return 11;
                             case logger_level::logger_level_debug_hard:
-                                out << "\033[38;5;" << debug_hard_level_color << 'm'; return 11;
+                                out << "\033[38;5;" << (uint16_t) debug_hard_level_color << 'm';
+                                return 11;
                             case logger_level::logger_level_debug_mare:
-                                out << "\033[38;5;" << debug_mare_level_color << 'm'; return 11;
+                                out << "\033[38;5;" << (uint16_t) debug_mare_level_color << 'm';
+                                return 11;
                             default: return 0; // impossible
                         };
                     default:
@@ -385,7 +422,7 @@ namespace eger {
     };
 
     extern logger the_logger;
-    
+
 
     enum multiline_switch {
         no_multiline = false,
@@ -395,7 +432,7 @@ namespace eger {
 
 #define to_log(level, streaming_content, multiline) \
     if(unlikely(the_logger_level.is_enabled(level))) { \
-        std::unique_ptr<std::ostringstream> out = new std::ostringstream; \
+        std::unique_ptr<std::ostringstream> out(new std::ostringstream); \
         [[gnu::unused]] size_t prefix_size = \
             the_logger.print_log_prefix(*out, level, __FILE__, __LINE__); \
         *out << streaming_content; \
@@ -423,17 +460,17 @@ namespace eger {
 
 #define log_info(streaming_content) \
     to_log(logger_level::logger_level_info, streaming_content, no_multiline)
-#define log_info(streaming_content) \
+#define log_info_multiline(streaming_content) \
     to_log(logger_level::logger_level_info, streaming_content, multiline)
 
 #define log_profile(streaming_content) \
     to_log(logger_level::logger_level_profile, streaming_content, no_multiline)
-#define log_profile(streaming_content) \
+#define log_profile_multiline(streaming_content) \
     to_log(logger_level::logger_level_profile, streaming_content, multiline)
 
 #define log_debug(streaming_content) \
     to_log(logger_level::logger_level_debug, streaming_content, no_multiline)
-#define log_debug(streaming_content) \
+#define log_debug_multiline(streaming_content) \
     to_log(logger_level::logger_level_debug, streaming_content, multiline)
 
 
@@ -449,12 +486,12 @@ namespace eger {
 
 #define log_debug_hard(streaming_content) \
     to_log(logger_level::logger_level_debug_hard, streaming_content, no_multiline)
-#define log_debug_hard(streaming_content) \
+#define log_debug_hard_multiline(streaming_content) \
     to_log(logger_level::logger_level_debug_hard, streaming_content, multiline)
 
 #define log_debug_mare(streaming_content) \
     to_log(logger_level::logger_level_debug_mare, streaming_content, no_multiline)
-#define log_debug_mare(streaming_content) \
+#define log_debug_mare_multiline(streaming_content) \
     to_log(logger_level::logger_level_debug_mare, streaming_content, multiline)
 
 #endif
