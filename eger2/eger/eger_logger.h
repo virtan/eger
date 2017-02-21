@@ -43,8 +43,9 @@ namespace eger {
                     dest(stderr),
                     path{0},
                     fd(-1),
-                    number_of_writes(0),
-                    last_write(0) // TODO: fast time
+                    number_of_writes_since_last_reopen(0),
+                    last_reopen(0), // TODO: fast time
+                    error_reported(false)
                 {}
 
                 bool enabled;
@@ -53,9 +54,19 @@ namespace eger {
                 destination dest;
                 char path[256];
                 int fd;
-                size_t number_of_writes;
-                size_t last_write;
+                size_t number_of_writes_since_last_reopen;
+                size_t last_reopen;
+                bool error_reported;
+                std::vector<iovec> scheduled_for_writing;
             };
+
+            mode_t log_file_mask = S_IWGRP | S_IWOTH;
+
+            // reopen log files every 1000 writes
+            size_t max_number_of_writes_since_last_reopen = 1000;
+
+            // reopen log files every 30 seconds
+            size_t max_open_time_us = 30 * 1000000;
 
         private:
             std::array<level_data, logger_levels> levels;
@@ -99,6 +110,7 @@ namespace eger {
                         ld.path[0] = path[0];
                     }
                     ld.dest = dest;
+                    ld.error_reported = false;
                     ld.enabled = enabled;
                 } else {
                     levels[l].enabled = enabled;
@@ -150,6 +162,66 @@ namespace eger {
             level_data &level_details(level l) {
                 return levels[l];
             }
+
+            void write_reports() {
+                for(auto &ld : levels) {
+                    if(likely(!ld.enabled || ld.dest == devnull)) {
+                        if(unlikely(ld.fd != -1)) {
+                            if(ld.fd > 2) close(ld.fd);
+                            ld.fd = -1;
+                        }
+                    } else {
+                        if(unlikely(needs_reopen(ld))) {
+                            if(dest == file) close(ld.fd);
+                            ld.fd = -1;
+                        }
+                        if(unlikely(ld.fd == -1)) {
+                            switch(ld.dest) {
+                                case stdout: ld.fd = 1; break;
+                                case stderr: ld.fd = 2; break;
+                                case devnull: continue; // impossible
+                                case file:
+                                    ld.fd = open(ld.path, O_WRONLY | O_APPEND | O_CREAT,
+                                            log_file_mask);
+                                    if(unlikely(ld.fd == -1)) {
+                                        if(unlikely(!ld.error_reported)) {
+                                            log_error("cannot open/create log file \""
+                                                    << ld.path << '"');
+                                            ld.error_reported = true;
+                                        }
+                                        scheduled_for_writing.clear();
+                                        continue;
+                                    } else {
+                                        ld.number_of_writes_since_last_reopen = 0;
+                                        ld.last_reopen = now_us();
+                                        ld.error_reported = false;
+                                    }
+                                    break;
+                            }
+                        }
+                        // fd != -1
+                        // writev on files will not be partial
+                        int rc;
+                        do {
+                            rc = writev(ld.fd, scheduled_for_writing.data(),
+                                    scheduled_for_writing.size());
+                        } while(unlikely(rc == -1 && errno == EINTR));
+                        if(unlikely(rc == -1 && !ld.error_reported && ld.dest == file)) {
+                            log_error("cannot write to log file \"" << ld.path << '"');
+                            ld.error_reported = true;
+                        }
+                        ++ld.number_of_writes_since_last_reopen;
+                    }
+                    scheduled_for_writing.clear();
+                }
+            }
+
+            inline bool needs_reopen(const level_data &ld) const {
+                size_t now = now_us();
+                return ld.number_of_writes_since_last_reopen >
+                    max_number_of_writes_since_last_reopen ||
+                    now > ld.last_reopen + max_open_time_us;
+            }
     };
 
     extern logger_level the_logger_level;
@@ -157,23 +229,39 @@ namespace eger {
     class logger {
         private:
 
+            enum ansi_color : uint16_t {
+                date_color = 238,
+                level_color = 1,
+                neutral_color = 0,
+                critical_level_color = 124,
+                error_level_color = 124,
+                warning_level_color = 184,
+                info_level_color = 112,
+                profile_level_color = 135,
+                debug_level_color = 130,
+                debug_hard_level_color = 131,
+                debug_mare_level_color = 133
+            };
+
             many_to_many_circular_queue<std::ostringstream> circular_queue;
             const size_t default_logger_queue_size = 4096;
+            std::thread writer;
 
         public:
 
             logger() {
                 circular_queue.init(default_logger_queue_size);
-                start_logging_thread();
+                start_writing_thread();
             }
 
             ~logger() {
-                stop_logging_thread();
+                stop_writing_thread();
             }
 
             size_t print_log_prefix(std::ostringstream &out, logger_level::level level,
                     const char *file, const char *line) {
                 size_t ansi_size = 0;
+                out << level;
                 level_data ld = the_logger_level.level_details(level);
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, date_color);
                 current_time_to_stream(out);
@@ -185,12 +273,12 @@ namespace eger {
                 }
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, level_color, level);
                 out << ' ' << the_logger_level.to_string(level) << ' ';
-                return out.str().size() - ansi_size;
+                return out.str().size() - ansi_size - 1;
             }
 
             void align_multiline_log_item(std::ostringstream &out, size_t prefix_size) {
                 if(out.str().empty() || !prefix_size) return; // no needs to edit
-                std::vector<size_t> newlines;
+                std::deque<size_t> newlines;
                 std::string &original = out.str();
                 size_t pos = 0;
                 while((pos = original.find('\n', pos)) != std::string::npos)
@@ -201,15 +289,14 @@ namespace eger {
                 pos = 0;
                 size_t dest_pos = 0;
                 do {
-                    // TODO
-                    original.copy(&edited[dest_pos], newlines.front() - pos, pos);
-
-                } while(newlines.empty());
-
-                if(!newlines.empty()) {
-                    edited.resize(prefix_size * newlines.size() + edited.size());
-
-                }
+                    size_t to_copy = (newlines.empty() ? original.size() : newlines.front() + 1)
+                        - pos;
+                    original.copy(edited.data() + dest_pos, to_copy, pos);
+                    pos += to_copy;
+                    dest_pos += to_copy;
+                    dest_pos += prefix_size;
+                    if(!newlines.empty()) newlines.pop_front();
+                } while(pos < original.size());
                 out.str(edited);
             }
 
@@ -224,10 +311,77 @@ namespace eger {
 
         private:
 
-            void start_logging_thread();
-            void stop_logging_thread();
+            void start_writing_thread() {
+                writer = std::thread(&logger::writer_thread, this);
+            }
+
+            void stop_writing_thread() {
+                auto finish_flag = new std::ostringstream();
+                finish_flag->setstate(std::ios::eofbit);
+                while(!push(finish_flag)) std::this_thread::yield();
+                writer.join();
+            }
+
+            void writer_thread() {
+                lower_this_thread_priority();
+                circular_vector<std::ostringstream*> swapped;
+                std::vector<std::ostringstream*> delayed_garbage_collect;
+                bool keep_running = true;
+                while(keep_running) {
+                    circular_queue.pop_all(swapped);
+                    for(auto pout : swapped) {
+                        if(unlikely(!keep_running)) { // delete everything after finish_flag
+                            delete pout;
+                        } else if(unlikely(!pout)) { // overflow, skipped some entries
+                            // TODO
+                        } else if(unlikely(pout->eof())) { // finish_flag
+                            keep_running = false;
+                            delete pout;
+                        } else {
+                            std::string &report = pout->str();
+                            if(unlikely(report.empty())) abort();
+                            logger_level::level lvl = (logger_level::level) report[0];
+                            logger_level::level_data &ld = the_logger_level.level_details(lvl);
+                            ld.scheduled_for_writing.emplace_back(
+                                    {report.data() + 1, report.size() - 1});
+                            delayed_garbage_collect.push_back(pout);
+                        }
+                    }
+                    the_logger_level.write_reports();
+                    for(auto pout : delayed_garbage_collect) delete pout;
+                    delayed_garbage_collect.clear();
+                }
+            }
+
             size_t ansi(std::ostringstream &out, ansi_color type,
-                    logger_level::level = logger_level::logger_level_critical);
+                    logger_level::level lvl = logger_level::logger_level_critical) {
+                switch(type) {
+                    case date_color: out << "\033[38;5;" << date_color << 'm'; return 11;
+                    case neutral_color: out << "\033[m"; return 3;
+                    case level_color:
+                        switch(lvl) {
+                            case logger_level::logger_level_critical:
+                                out << "\033[38;5;" << critical_level_color << 'm'; return 11;
+                            case logger_level::logger_level_error:
+                                out << "\033[38;5;" << error_level_color << 'm'; return 11;
+                            case logger_level::logger_level_warning:
+                                out << "\033[38;5;" << warning_level_color << 'm'; return 11;
+                            case logger_level::logger_level_info:
+                                out << "\033[38;5;" << info_level_color << 'm'; return 11;
+                            case logger_level::logger_level_profile:
+                                out << "\033[38;5;" << profile_level_color << 'm'; return 11;
+                            case logger_level::logger_level_debug:
+                                out << "\033[38;5;" << debug_level_color << 'm'; return 11;
+                            case logger_level::logger_level_debug_hard:
+                                out << "\033[38;5;" << debug_hard_level_color << 'm'; return 11;
+                            case logger_level::logger_level_debug_mare:
+                                out << "\033[38;5;" << debug_mare_level_color << 'm'; return 11;
+                            default: return 0; // impossible
+                        };
+                    default:
+                        return 0; // impossible
+                }
+            }
     };
 
     extern logger the_logger;

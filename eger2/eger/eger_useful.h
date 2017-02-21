@@ -10,6 +10,12 @@ enum a_switch : bool {
 };
 
 bool autodetect_ansi();
+
 std::ostringstream &current_time_to_stream(std::ostringstream &out);
+
+bool writev_all(int fd, const struct iovec *iov, int iovcnt);
+
+// returns current time in microseconds
+size_t now_us();
 
 #endif
