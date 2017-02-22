@@ -45,11 +45,11 @@ namespace eger {
                     {}
 
                     Value &operator*() {
-                        return v[position];
+                        return v.v[position];
                     }
 
                     Value &operator->() {
-                        return v[position];
+                        return v.v[position];
                     }
 
                     bool operator==(const iterator &other) const {
@@ -89,11 +89,11 @@ namespace eger {
             }
 
             iterator begin() {
-                return iterator(v, reader_position);
+                return iterator(*this, reader_position);
             }
 
             iterator end() {
-                return iterator(v, writer_position);
+                return iterator(*this, writer_position);
             }
 
         template<class Value2>
