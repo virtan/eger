@@ -9,8 +9,29 @@ set(CMAKE_CXX_STANDARD 11)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-add_executable(unit_tests eger/unit_tests.cc eger/unit_tests_body.agcc eger/unit_tests_headers.agcc)
-add_test(NAME unit_tests COMMAND valgrind --leak-check=yes ./unit_tests)
+if(UNIX AND NOT APPLE)
+    set(LINUX TRUE)
+endif()
+
+set(SOURCES
+    eger/useful.cc
+    eger/logger.cc
+    )
+
+add_executable(unit_tests
+    eger/unit_tests.cc
+    eger/unit_tests_body.agcc
+    eger/unit_tests_headers.agcc
+    ${SOURCES}
+    )
+
+if(LINUX)
+    set(VALGRIND valgrind --leak-check=yes)
+else()
+    set(VALGRIND)
+endif()
+
+add_test(NAME unit_tests COMMAND ${VALGRIND} ./unit_tests)
 add_custom_command(
     OUTPUT eger/unit_tests_body.agcc eger/unit_tests_headers.agcc
 #sed -nE "/ifndef +NTEST/,/endif/p;" many_to_many_circular_queue.h | sed -nE "s/^.*((static +bool +(test_.*)\(.*)|(NTEST \/\/ +([^ ]*)))$/\\3:\\5/p" | awk 'substr($1,1,1)==":"{prefix=$0; next;} {printf "{bool rc = eger:%s::%s(); assert(rc);}\n",prefix,substr($0,1,length($0)-1);}'

@@ -10,7 +10,7 @@
 #include <assert.h>
 #include <thread>
 
-#include <eger/eger_useful.h>
+#include <eger/useful.h>
 
 namespace eger {
 

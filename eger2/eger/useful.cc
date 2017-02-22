@@ -1,4 +1,6 @@
-#include <eger/eger_useful.h>
+#include <eger/useful.h>
+#include <sys/time.h>
+#include <assert.h>
 
 bool autodetect_ansi() {
     // TODO
@@ -6,7 +8,7 @@ bool autodetect_ansi() {
 }
 
 std::ostringstream &date(std::ostringstream &out) {
-    
+    return out;
 }
 
 bool writev_all(int fd, const struct iovec *iov, int iovcnt) {

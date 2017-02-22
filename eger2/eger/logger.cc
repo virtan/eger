@@ -1,4 +1,4 @@
-#include <eger_logger.h>
+#include <eger/logger.h>
 
 namespace eger {
 

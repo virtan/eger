@@ -8,8 +8,9 @@
 #include <thread>
 #include <regex>
 #include <sstream>
+#include <iostream>
 
-#include <eger/eger_useful.h>
+#include <eger/useful.h>
 #include <eger/many_to_many_circular_queue.h>
 
 // Typical logger call:
