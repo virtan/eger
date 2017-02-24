@@ -251,6 +251,35 @@ namespace eger {
                     default: return "UNKN";
                 }
             }
+
+#ifndef NTEST // logger_level
+        public:
+
+            static bool test_create_destroy() {
+                { logger_level l; }
+                return true;
+            }
+
+            static bool test_set_level() {
+                logger_level l;
+                l.set(logger_level_warning, disabled);
+                l.set(logger_level_error, enabled, with_ansi_colors, no_location,  file, "/tmp/log");
+                l.set(logger_level_critical, enabled, no_ansi_colors, with_location, stderr);
+                assert(l.levels[logger_level_warning].enabled == false);
+                assert(l.levels[logger_level_error].enabled == true);
+                assert(l.levels[logger_level_error].ansi_colors == true);
+                assert(l.levels[logger_level_error].location == false);
+                assert(l.levels[logger_level_error].dest == file);
+                std::cout << l.levels[logger_level_error].path << std::endl;
+                assert(std::string(l.levels[logger_level_error].path) == "/tmp/log");
+                assert(l.levels[logger_level_critical].enabled == true);
+                assert(l.levels[logger_level_critical].ansi_colors == false);
+                assert(l.levels[logger_level_error].location == true);
+                assert(l.levels[logger_level_error].dest == stderr);
+                return true;
+            }
+
+#endif
     };
 
     extern logger_level the_logger_level;
