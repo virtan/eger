@@ -6,12 +6,15 @@ set(eger_VERSION_MINOR 1)
 set(PROJECT_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/eger)
 
 set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-pthread")
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 if(UNIX AND NOT APPLE)
     set(LINUX TRUE)
 endif()
+
+find_package(Threads)
 
 set(SOURCES
     eger/useful.cc

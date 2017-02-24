@@ -45,11 +45,11 @@ namespace eger {
                     {}
 
                     Value &operator*() {
-                        return v.v[position];
+                        return v.v[position & (v.v.size() - 1)];
                     }
 
                     Value &operator->() {
-                        return v.v[position];
+                        return v.v[position & (v.v.size() - 1)];
                     }
 
                     bool operator==(const iterator &other) const {
@@ -541,11 +541,11 @@ namespace eger {
                     delete i;
                 }
                 assert(ind == 4);
-                assert(cv.reader_position == cv.writer_position);
+                assert(cv.reader_position == 2);
                 assert(cv.writer_position == 5);
                 assert(cv.v.size() == 4);
-                assert(cv.size() == 0);
-                assert(cv.empty());
+                assert(cv.size() == 3);
+                assert(!cv.empty());
                 assert(target.circular_buffer.size() == 4);
                 
                 return true;
