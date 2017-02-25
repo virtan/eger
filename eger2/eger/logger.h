@@ -117,9 +117,9 @@ namespace eger {
                     ld.ansi_colors = ansi_colors;
                     ld.location = location;
                     ld.dest = devnull;
-                    if(ld.dest == file) {
+                    if(dest == file) {
                         ld.path[0] = 0;
-                        path.copy(&ld.path[1], std::min(path.size() - 2, sizeof(ld.path) - 2), 1);
+                        path.copy(&ld.path[1], std::min(path.size() - 1, sizeof(ld.path) - 2), 1);
                         ld.path[sizeof(ld.path) - 1] = 0;
                         ld.path[0] = path[0];
                     }
@@ -263,14 +263,13 @@ namespace eger {
             static bool test_set_level() {
                 logger_level l;
                 l.set(logger_level_warning, disabled);
-                l.set(logger_level_error, enabled, with_ansi_colors, no_location,  file, "/tmp/log");
+                l.set(logger_level_error, enabled, with_ansi_colors, no_location, file, "/tmp/log");
                 l.set(logger_level_critical, enabled, no_ansi_colors, with_location, stderr);
                 assert(l.levels[logger_level_warning].enabled == false);
                 assert(l.levels[logger_level_error].enabled == true);
                 assert(l.levels[logger_level_error].ansi_colors == true);
                 assert(l.levels[logger_level_error].location == false);
                 assert(l.levels[logger_level_error].dest == file);
-                std::cout << l.levels[logger_level_error].path << std::endl;
                 assert(std::string(l.levels[logger_level_error].path) == "/tmp/log");
                 assert(l.levels[logger_level_critical].enabled == true);
                 assert(l.levels[logger_level_critical].ansi_colors == false);
