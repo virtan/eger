@@ -134,7 +134,7 @@ namespace eger {
             // for console and config use
             // example:
             //     logger.level_warning = disabled
-            //     logger.level_error = enabled, with_ansi_colors, file "/tmp/log"
+            //     logger.level_error = enabled, with_ansi_colors, no_location, file "/tmp/log"
             //     logger.level_critical = enabled, no_ansi_colors, stderr
             //     logger.level_info = "/some/file"
             void set(level l, const std::string &settings) {
@@ -273,8 +273,26 @@ namespace eger {
                 assert(std::string(l.levels[logger_level_error].path) == "/tmp/log");
                 assert(l.levels[logger_level_critical].enabled == true);
                 assert(l.levels[logger_level_critical].ansi_colors == false);
-                assert(l.levels[logger_level_error].location == true);
-                assert(l.levels[logger_level_error].dest == stderr);
+                assert(l.levels[logger_level_critical].location == true);
+                assert(l.levels[logger_level_critical].dest == stderr);
+                return true;
+            }
+
+            static bool test_set_level_string() {
+                logger_level l;
+                l.set(logger_level_warning, "disabled");
+                l.set(logger_level_error, "enabled, with_ansi_colors, no_location, file \"/tmp/log\"");
+                l.set(logger_level_critical, "no_ansi_colors, with_location, stderr");
+                assert(l.levels[logger_level_warning].enabled == false);
+                assert(l.levels[logger_level_error].enabled == true);
+                assert(l.levels[logger_level_error].ansi_colors == true);
+                assert(l.levels[logger_level_error].location == false);
+                assert(l.levels[logger_level_error].dest == file);
+                assert(std::string(l.levels[logger_level_error].path) == "/tmp/log");
+                assert(l.levels[logger_level_critical].enabled == true);
+                assert(l.levels[logger_level_critical].ansi_colors == false);
+                assert(l.levels[logger_level_critical].location == true);
+                assert(l.levels[logger_level_critical].dest == stderr);
                 return true;
             }
 

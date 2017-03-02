@@ -6,7 +6,13 @@ set(eger_VERSION_MINOR 1)
 set(PROJECT_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/eger)
 
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-pthread")
+set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-pthread -Wall -Werror")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+
+IF(NOT CMAKE_BUILD_TYPE)
+    SET(CMAKE_BUILD_TYPE Debug)
+ENDIF(NOT CMAKE_BUILD_TYPE)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
@@ -41,6 +47,7 @@ add_custom_command(
     COMMAND sed -nE '/ifndef +NTEST/,/endif/p;' eger/*.cc eger/*.h | sed -nE 's/^.*\(\(static +bool +\(test_.*\)\\\(.*\)|\(NTEST \\/\\/ +\([^ ]*\)\)\)$$/\\3:\\5/p' | awk 'substr\($$1,1,1\)==":"{prefix=$$0\; next\;} {printf \"{bool rc = eger:%s::%s\(\)\; assert\(rc\)\;}\\n\",prefix,substr\($$0,1,length\($$0\)-1\)\;}' > eger/unit_tests_body.agcc
     COMMAND ls -1 eger/*.h | grep -v indexer | cut -d '/' -f 2- | awk '{print \"\#include \\\"\"$$0\"\\\"\"\;}\' > eger/unit_tests_headers.agcc
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    DEPENDS eger/*.cc eger/*.h
     )
 
 set(CMAKE_CTEST_COMMAND unit_tests)
