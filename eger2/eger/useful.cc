@@ -1,13 +1,13 @@
 #include <eger/useful.h>
 #include <sys/time.h>
 #include <assert.h>
+#include <unistd.h>
 
-bool autodetect_ansi() {
-    // TODO
-    return true;
+bool autodetect_ansi(int fd) {
+    return isatty(fd);
 }
 
-std::ostringstream &date(std::ostringstream &out) {
+std::ostringstream &current_time_to_stream(std::ostringstream &out) {
     return out;
 }
 

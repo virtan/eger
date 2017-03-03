@@ -84,7 +84,8 @@ namespace eger {
 
         private:
             std::array<level_data, logger_levels> levels;
-            static bool autodetected_ansi_colors;
+            static bool autodetected_ansi_colors_stdout;
+            static bool autodetected_ansi_colors_stderr;
 
         public:
 
@@ -94,7 +95,8 @@ namespace eger {
                 for(level i : {logger_level_critical, logger_level_error, logger_level_warning}) {
                     auto &ld = levels[i];
                     ld.enabled = true;
-                    ld.ansi_colors = autodetected_ansi_colors;
+                    ld.dest = stderr;
+                    ld.ansi_colors = autodetected_ansi_colors_stderr;
                 }
             }
             
@@ -108,7 +110,7 @@ namespace eger {
             //     set(logger_level_warning, disabled);
             //     set(logger_level_error, enabled, with_ansi_colors, no_location,  file, "/tmp/log");
             //     set(logger_level_critical, enabled, no_ansi_colors, with_location, stderr);
-            void set(level l, bool enabled, bool ansi_colors = autodetected_ansi_colors,
+            void set(level l, bool enabled, bool ansi_colors = autodetected_ansi_colors_stderr,
                     bool location = false, destination dest = stderr,
                     const std::string &path = std::string()) {
                 if(enabled) {
@@ -142,7 +144,7 @@ namespace eger {
                 static std::regex re("(\"[^\"]*\")|enabled|disabled|with_ansi_colors|"
                         "no_ansi_colors|with_location|no_location|stderr|stdout|devnull|file");
                 bool enabled = false;
-                bool ansi_colors = autodetected_ansi_colors;
+                bool ansi_colors = autodetected_ansi_colors_stderr;
                 bool location = false;
                 destination dest = stderr;
                 std::string path;
@@ -364,14 +366,14 @@ namespace eger {
                 ld.fd = -1;
                 return true;
             }
-
 #endif
     };
 
-    extern logger_level the_logger_level;
-
-
     class logger {
+        public:
+
+            logger_level &logger_level_instance;
+
         private:
 
             enum ansi_color : uint16_t {
@@ -394,7 +396,9 @@ namespace eger {
 
         public:
 
-            logger() {
+            logger(logger_level &_logger_level_instance) :
+                logger_level_instance(_logger_level_instance)
+            {
                 circular_queue.init(default_logger_queue_size);
                 start_writing_thread();
             }
@@ -407,7 +411,7 @@ namespace eger {
                     const char *file, const char *line) {
                 size_t ansi_size = 0;
                 out << level;
-                logger_level::level_data ld = the_logger_level.level_details(level);
+                logger_level::level_data ld = logger_level_instance.level_details(level);
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, date_color);
                 current_time_to_stream(out);
                 out << ' ';
@@ -417,8 +421,8 @@ namespace eger {
                     out << ' ';
                 }
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, level_color, level);
-                out << ' ' << the_logger_level.to_short_string(level) << ' ';
-                return out.str().size() - ansi_size - 1;
+                out << ' ' << logger_level_instance.to_short_string(level) << ' ';
+                return (size_t) out.tellp() - ansi_size - 1;
             }
 
             void align_multiline_log_item(std::ostringstream &out, size_t prefix_size) {
@@ -446,7 +450,7 @@ namespace eger {
             }
 
             void print_log_suffix(std::ostringstream &out, logger_level::level level) {
-                logger_level::level_data ld = the_logger_level.level_details(level);
+                logger_level::level_data ld = logger_level_instance.level_details(level);
                 if(unlikely(ld.ansi_colors)) ansi(out, neutral_color);
             }
 
@@ -486,13 +490,13 @@ namespace eger {
                             const std::string &report = pout->str();
                             if(unlikely(report.empty())) abort();
                             logger_level::level lvl = (logger_level::level) report[0];
-                            logger_level::level_data &ld = the_logger_level.level_details(lvl);
+                            logger_level::level_data &ld = logger_level_instance.level_details(lvl);
                             ld.scheduled_for_writing.emplace_back(
                                     iovec{const_cast<char*>(report.data()) + 1, report.size() - 1});
                             delayed_garbage_collect.push_back(pout);
                         }
                     }
-                    the_logger_level.write_reports();
+                    logger_level_instance.write_reports();
                     for(auto pout : delayed_garbage_collect) delete pout;
                     delayed_garbage_collect.clear();
                 }
@@ -535,6 +539,30 @@ namespace eger {
                         return 0; // impossible
                 }
             }
+#ifndef NTEST // logger
+        public:
+
+            static bool test_constructing() {
+                { logger_level ll; logger l(ll); }
+                return true;
+            }
+
+            static bool test_print_log_prefix() {
+                logger_level ll;
+                logger l(ll);
+                std::ostringstream out;
+                size_t rc;
+                auto llerr = logger_level::logger_level_error;
+
+                ll.set(llerr, "enabled, no_ansi_colors, no_location, file \"/tmp/log\"");
+                rc = l.print_log_prefix(out, llerr, "file10", "line1");
+                std::cout << rc << ", " << out.str() << std::endl;
+                assert(rc == 10);
+                assert(out.str() == "");
+
+                return true;
+            }
+#endif
     };
 
     extern logger the_logger;
@@ -547,7 +575,7 @@ namespace eger {
 
 
 #define to_log(level, streaming_content, multiline) \
-    if(unlikely(the_logger_level.is_enabled(level))) { \
+    if(unlikely(the_logger.logger_level_instance.is_enabled(level))) { \
         std::unique_ptr<std::ostringstream> out(new std::ostringstream); \
         [[gnu::unused]] size_t prefix_size = \
             the_logger.print_log_prefix(*out, level, __FILE__, __LINE__); \
