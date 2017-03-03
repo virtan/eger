@@ -137,6 +137,7 @@ namespace eger {
             //     logger.level_error = enabled, with_ansi_colors, no_location, file "/tmp/log"
             //     logger.level_critical = enabled, no_ansi_colors, stderr
             //     logger.level_info = "/some/file"
+            void set(level l, const char *settings) { set(l, std::string(settings)); }
             void set(level l, const std::string &settings) {
                 static std::regex re("(\"[^\"]*\")|enabled|disabled|with_ansi_colors|"
                         "no_ansi_colors|with_location|no_location|stderr|stdout|devnull|file");
@@ -184,7 +185,7 @@ namespace eger {
                             if(ld.fd > 2) close(ld.fd);
                             ld.fd = -1;
                         }
-                    } else {
+                    } else if(unlikely(!ld.scheduled_for_writing.empty())) {
                         if(unlikely(needs_reopen(ld))) {
                             if(ld.dest == file) close(ld.fd);
                             ld.fd = -1;
@@ -241,7 +242,7 @@ namespace eger {
             static std::string to_short_string(level l) {
                 switch(l) {
                     case logger_level_critical: return "CRIT";
-                    case logger_level_error: return "ERRR";
+                    case logger_level_error: return "ERRO";
                     case logger_level_warning: return "WARN";
                     case logger_level_info: return "INFO";
                     case logger_level_profile: return "PROF";
@@ -293,6 +294,74 @@ namespace eger {
                 assert(l.levels[logger_level_critical].ansi_colors == false);
                 assert(l.levels[logger_level_critical].location == true);
                 assert(l.levels[logger_level_critical].dest == stderr);
+                return true;
+            }
+
+            static bool test_api_small_methods() {
+                logger_level l;
+                l.set(logger_level_warning, "disabled");
+                l.set(logger_level_error, "enabled, with_ansi_colors, no_location, file \"/tmp/log\"");
+                assert(l.is_enabled(logger_level_warning) == false);
+                assert(l.is_enabled(logger_level_error) == true);
+                level_data &ld = l.level_details(logger_level_error);
+                assert(ld.dest == file);
+                assert(logger_level::to_short_string(logger_level_critical) == std::string("CRIT"));
+                assert(logger_level::to_short_string(logger_level_error) == std::string("ERRO"));
+                assert(logger_level::to_short_string(logger_level_warning) == std::string("WARN"));
+                return true;
+            }
+            
+            static bool test_writing() {
+                logger_level l;
+                l.set(logger_level_critical, disabled);
+                l.set(logger_level_error, enabled, with_ansi_colors, no_location, file, "/tmp/log");
+                l.set(logger_level_warning, disabled);
+                l.set(logger_level_info, disabled);
+                l.set(logger_level_profile, disabled);
+                l.set(logger_level_debug, disabled);
+                l.set(logger_level_debug_hard, disabled);
+                l.set(logger_level_debug_mare, disabled);
+                l.set(logger_levels, disabled);
+                int pipefd[2];
+                int rc = pipe(pipefd);
+                assert(rc == 0);
+                level_data &ld = l.level_details(logger_level_error);
+                ld.fd = pipefd[1];
+                ld.last_reopen = now_us();
+                rc = fcntl(pipefd[0], F_SETFL, fcntl(pipefd[0], F_GETFL, 0) | O_NONBLOCK);
+                assert(rc == 0);
+                char buf[256];
+
+                // empty 
+                assert(l.needs_reopen(ld) == false);
+                l.write_reports();
+                rc = read(pipefd[0], buf, 256);
+                assert(rc == -1 && errno == EWOULDBLOCK);
+                assert(l.needs_reopen(ld) == false);
+
+                // 2 lines
+                ld.scheduled_for_writing.emplace_back(iovec{(void*) "hello", 5});
+                ld.scheduled_for_writing.emplace_back(iovec{(void*) "world", 5});
+                l.write_reports();
+                rc = read(pipefd[0], buf, 256);
+                assert(rc == 5+5);
+                assert(memcmp(buf, "helloworld", 5+5) == 0);
+
+                assert(l.needs_reopen(ld) == false);
+                assert(ld.number_of_writes_since_last_reopen == 1);
+                assert(ld.number_of_writes_since_last_reopen < l.max_number_of_writes_since_last_reopen);
+                assert(now_us() < ld.last_reopen + l.max_open_time_us);
+                assert(ld.scheduled_for_writing.empty());
+
+                ld.number_of_writes_since_last_reopen = l.max_number_of_writes_since_last_reopen + 1;
+                assert(l.needs_reopen(ld) == true);
+                ld.number_of_writes_since_last_reopen = 1;
+                ld.last_reopen = now_us() - l.max_open_time_us - 1;
+                assert(l.needs_reopen(ld) == true);
+
+                close(pipefd[0]);
+                close(pipefd[1]);
+                ld.fd = -1;
                 return true;
             }
 
