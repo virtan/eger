@@ -22,4 +22,6 @@ size_t now_us();
 
 void lower_this_thread_priority();
 
+std::string human_readable_number(double d);
+
 #endif
