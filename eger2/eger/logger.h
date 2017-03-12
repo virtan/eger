@@ -379,6 +379,7 @@ namespace eger {
             enum ansi_color : uint16_t {
                 date_color = 238,
                 level_color = 1,
+                location_color = 238,
                 neutral_color = 0,
                 critical_level_color = 124,
                 error_level_color = 124,
@@ -414,12 +415,6 @@ namespace eger {
                 logger_level::level_data ld = logger_level_instance.level_details(level);
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, date_color);
                 current_time_to_stream(out);
-                out << ' ';
-                if(unlikely(ld.location)) {
-                    // if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, location_color);
-                    out << file << ':' << line;
-                    out << ' ';
-                }
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, level_color, level);
                 out << ' ' << logger_level_instance.to_short_string(level) << ' ';
                 return (size_t) out.tellp() - ansi_size - 1;
@@ -449,8 +444,13 @@ namespace eger {
                 out.str(edited);
             }
 
-            void print_log_suffix(std::ostringstream &out, logger_level::level level) {
+            void print_log_suffix(std::ostringstream &out, logger_level::level level,
+                    const char *file, const char *line) {
                 logger_level::level_data ld = logger_level_instance.level_details(level);
+                if(unlikely(ld.location)) {
+                    if(unlikely(ld.ansi_colors)) ansi(out, location_color);
+                    out << ' ' << file << ':' << line;
+                }
                 if(unlikely(ld.ansi_colors)) ansi(out, neutral_color);
             }
 
@@ -506,6 +506,7 @@ namespace eger {
                     logger_level::level lvl = logger_level::logger_level_critical) {
                 switch(type) {
                     case date_color: out << "\033[38;5;" << (uint16_t) date_color << 'm'; return 11;
+                    //case location_color: out << "\033[38;5;" << (uint16_t) location_color << 'm'; return 11;
                     case neutral_color: out << "\033[m"; return 3;
                     case level_color:
                         switch(lvl) {
@@ -553,26 +554,29 @@ namespace eger {
                 std::ostringstream out;
                 size_t rc;
                 auto llerr = logger_level::logger_level_error;
+                auto llwarn = logger_level::logger_level_warning;
+                auto lldebug = logger_level::logger_level_debug;
 
                 ll.set(llerr, "enabled, no_ansi_colors, no_location, file \"/tmp/log\"");
                 rc = l.print_log_prefix(out, llerr, "file10", "line1");
-                std::cout << rc << ", " << out.str() << std::endl;
-                //assert(rc == 10);
-                //assert(out.str() == "");
+                assert(rc == 29);
+                assert(out.str().size() == rc + 1);
+                assert(std::regex_match(out.str(), std::regex("120[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
+                        " [0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9] ERRO ")));
                 out.str("");
 
-                ll.set(llerr, "enabled, with_ansi_colors, no_location, file \"/tmp/log\"");
-                rc = l.print_log_prefix(out, llerr, "file10", "line1");
-                std::cout << rc << ", " << out.str() << std::endl;
-                //assert(rc == 10);
-                //assert(out.str() == "");
+                ll.set(llwarn, "enabled, with_ansi_colors, no_location, file \"/tmp/log\"");
+                rc = l.print_log_prefix(out, llwarn, "file10", "line1");
+                assert(rc == 29);
+                assert(out.str().size() > rc + 1);
+                assert(std::regex_match(out.str(), std::regex("2\033\\[[0-9;]*m20[0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9]\033\\[[0-9;]*m WARN ")));
                 out.str("");
 
-                ll.set(llerr, "enabled, with_ansi_colors, with_location, file \"/tmp/log\"");
-                rc = l.print_log_prefix(out, llerr, "file10", "line1");
-                std::cout << rc << ", " << out.str() << std::endl;
-                //assert(rc == 10);
-                //assert(out.str() == "");
+                ll.set(lldebug, "enabled, with_ansi_colors, with_location, file \"/tmp/log\"");
+                rc = l.print_log_prefix(out, lldebug, "file10", "line1");
+                assert(rc == 29);
+                assert(out.str().size() > rc + 1);
+                assert(std::regex_match(out.str(), std::regex("5\033\\[[0-9;]*m20[0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9]\033\\[[0-9;]*m DEBG ")));
                 out.str("");
 
                 return true;

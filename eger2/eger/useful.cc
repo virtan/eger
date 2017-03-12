@@ -16,7 +16,7 @@ std::ostringstream &current_time_to_stream(std::ostringstream &out) {
     time_t t = now/1000000;
     size_t fractional_seconds = (now % 1000000) / 1000;
     out << std::put_time(std::localtime(&t), "%F %T")
-        << '.' << std::setw(3) << std::setfill('0') << fractional_seconds << ' ';
+        << '.' << std::setw(3) << std::setfill('0') << fractional_seconds;
     return out;
 }
 
