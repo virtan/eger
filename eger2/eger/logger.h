@@ -408,10 +408,9 @@ namespace eger {
                 stop_writing_thread();
             }
 
-            size_t print_log_prefix(std::ostringstream &out, logger_level::level level,
-                    const char *file, const char *line) {
+            size_t print_log_prefix(std::ostringstream &out, logger_level::level level) {
                 size_t ansi_size = 0;
-                out << level;
+                out << (char) level;
                 logger_level::level_data ld = logger_level_instance.level_details(level);
                 if(unlikely(ld.ansi_colors)) ansi_size += ansi(out, date_color);
                 current_time_to_stream(out);
@@ -445,7 +444,7 @@ namespace eger {
             }
 
             void print_log_suffix(std::ostringstream &out, logger_level::level level,
-                    const char *file, const char *line) {
+                    const char *file, int line) {
                 logger_level::level_data ld = logger_level_instance.level_details(level);
                 if(unlikely(ld.location)) {
                     if(unlikely(ld.ansi_colors)) ansi(out, location_color);
@@ -558,7 +557,7 @@ namespace eger {
                 auto lldebug = logger_level::logger_level_debug;
 
                 ll.set(llerr, "enabled, no_ansi_colors, no_location, file \"/tmp/log\"");
-                rc = l.print_log_prefix(out, llerr, "file10", "line1");
+                rc = l.print_log_prefix(out, llerr);
                 assert(rc == 29);
                 assert(out.str().size() == rc + 1);
                 assert(std::regex_match(out.str(), std::regex("120[0-9][0-9]-[0-9][0-9]-[0-9][0-9]"
@@ -566,19 +565,24 @@ namespace eger {
                 out.str("");
 
                 ll.set(llwarn, "enabled, with_ansi_colors, no_location, file \"/tmp/log\"");
-                rc = l.print_log_prefix(out, llwarn, "file10", "line1");
+                rc = l.print_log_prefix(out, llwarn);
                 assert(rc == 29);
                 assert(out.str().size() > rc + 1);
                 assert(std::regex_match(out.str(), std::regex("2\033\\[[0-9;]*m20[0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9]\033\\[[0-9;]*m WARN ")));
                 out.str("");
 
                 ll.set(lldebug, "enabled, with_ansi_colors, with_location, file \"/tmp/log\"");
-                rc = l.print_log_prefix(out, lldebug, "file10", "line1");
+                rc = l.print_log_prefix(out, lldebug);
                 assert(rc == 29);
                 assert(out.str().size() > rc + 1);
                 assert(std::regex_match(out.str(), std::regex("5\033\\[[0-9;]*m20[0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9][0-9][0-9]\033\\[[0-9;]*m DEBG ")));
                 out.str("");
 
+                return true;
+            }
+
+            static bool test_print_log_suffix() {
+                // TODO
                 return true;
             }
 #endif
@@ -594,47 +598,47 @@ namespace eger {
 
 
 #define to_log(level, streaming_content, multiline) \
-    if(unlikely(the_logger.logger_level_instance.is_enabled(level))) { \
+    if(unlikely(eger::the_logger.logger_level_instance.is_enabled(level))) { \
         std::unique_ptr<std::ostringstream> out(new std::ostringstream); \
         [[gnu::unused]] size_t prefix_size = \
-            the_logger.print_log_prefix(*out, level, __FILE__, __LINE__); \
+            eger::the_logger.print_log_prefix(*out, level); \
         *out << streaming_content; \
-        if(multiline) the_logger.align_multiline_log_item(*out, prefix_size); \
-        the_logger.print_log_suffix(*out, level); \
+        if(multiline) eger::the_logger.align_multiline_log_item(*out, prefix_size); \
+        eger::the_logger.print_log_suffix(*out, level, __FILE__, __LINE__); \
         std::ostringstream *pout = out.release(); \
-        if(!the_logger.push(pout)) delete pout; \
+        if(!eger::the_logger.push(pout)) delete pout; \
     }
 
 
 #define log_critical(streaming_content) \
-    { to_log(logger_level::logger_level_critical, streaming_content, no_multiline); abort(); }
+    { to_log(eger::logger_level::logger_level_critical, streaming_content, eger::no_multiline); abort(); }
 #define log_critical_multiline(streaming_content) \
-    { to_log(logger_level::logger_level_critical, streaming_content, multiline); abort(); }
+    { to_log(eger::logger_level::logger_level_critical, streaming_content, eger::multiline); abort(); }
 
 #define log_error(streaming_content) \
-    to_log(logger_level::logger_level_error, streaming_content, no_multiline)
+    to_log(eger::logger_level::logger_level_error, streaming_content, eger::no_multiline)
 #define log_error_multiline(streaming_content) \
-    to_log(logger_level::logger_level_error, streaming_content, multiline)
+    to_log(eger::logger_level::logger_level_error, streaming_content, eger::multiline)
 
 #define log_warning(streaming_content) \
-    to_log(logger_level::logger_level_warning, streaming_content, no_multiline)
+    to_log(eger::logger_level::logger_level_warning, streaming_content, eger::no_multiline)
 #define log_warning_multiline(streaming_content) \
-    to_log(logger_level::logger_level_warning, streaming_content, multiline)
+    to_log(eger::logger_level::logger_level_warning, streaming_content, multiline)
 
 #define log_info(streaming_content) \
-    to_log(logger_level::logger_level_info, streaming_content, no_multiline)
+    to_log(eger::logger_level::logger_level_info, streaming_content, eger::no_multiline)
 #define log_info_multiline(streaming_content) \
-    to_log(logger_level::logger_level_info, streaming_content, multiline)
+    to_log(eger::logger_level::logger_level_info, streaming_content, eger::multiline)
 
 #define log_profile(streaming_content) \
-    to_log(logger_level::logger_level_profile, streaming_content, no_multiline)
+    to_log(eger::logger_level::logger_level_profile, streaming_content, eger::no_multiline)
 #define log_profile_multiline(streaming_content) \
-    to_log(logger_level::logger_level_profile, streaming_content, multiline)
+    to_log(eger::logger_level::logger_level_profile, streaming_content, eger::multiline)
 
 #define log_debug(streaming_content) \
-    to_log(logger_level::logger_level_debug, streaming_content, no_multiline)
+    to_log(eger::logger_level::logger_level_debug, streaming_content, eger::no_multiline)
 #define log_debug_multiline(streaming_content) \
-    to_log(logger_level::logger_level_debug, streaming_content, multiline)
+    to_log(eger::logger_level::logger_level_debug, streaming_content, eger::multiline)
 
 
 #ifdef NDEBUG
@@ -648,14 +652,14 @@ namespace eger {
 #else
 
 #define log_debug_hard(streaming_content) \
-    to_log(logger_level::logger_level_debug_hard, streaming_content, no_multiline)
+    to_log(eger::logger_level::logger_level_debug_hard, streaming_content, eger::no_multiline)
 #define log_debug_hard_multiline(streaming_content) \
-    to_log(logger_level::logger_level_debug_hard, streaming_content, multiline)
+    to_log(eger::logger_level::logger_level_debug_hard, streaming_content, eger::multiline)
 
 #define log_debug_mare(streaming_content) \
-    to_log(logger_level::logger_level_debug_mare, streaming_content, no_multiline)
+    to_log(eger::logger_level::logger_level_debug_mare, streaming_content, eger::no_multiline)
 #define log_debug_mare_multiline(streaming_content) \
-    to_log(logger_level::logger_level_debug_mare, streaming_content, multiline)
+    to_log(eger::logger_level::logger_level_debug_mare, streaming_content, eger::multiline)
 
 #endif
 

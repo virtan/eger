@@ -8,3 +8,4 @@ eger/unit_tests_body.agcc
 eger/unit_tests_headers.agcc
 
 unit_tests
+tmp/
